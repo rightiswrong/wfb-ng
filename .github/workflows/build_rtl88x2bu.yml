@@ -39,7 +39,7 @@ jobs:
             headers: linux-headers-generic linux-headers-raspi
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install build tools and kernel headers
         env:
@@ -53,8 +53,10 @@ jobs:
         shell: bash
         run: |
           set -u
+          esc() { sed -e 's/%/%25/g' -e 's/\r/%0D/g' | awk 'BEGIN{ORS="%0A"} {print}' | cut -c1-3000; }
           fail=0
           cd drivers/rtl88x2bu-wfb
+          echo "::notice title=kernels ${{ matrix.name }}::$(ls /lib/modules | tr '\n' ' ')"
           for build in /lib/modules/*/build; do
             kver=$(basename "$(dirname "$build")")
             log="$GITHUB_WORKSPACE/build-$kver.log"
@@ -65,24 +67,17 @@ jobs:
               echo "::notice title=built ${{ matrix.name }} $kver::88x2bu_wfb.ko $(stat -c %s 88x2bu_wfb.ko) bytes, $(modinfo -F alias 88x2bu_wfb.ko | wc -l) USB aliases, wfb params $params/2, $warns warnings"
             else
               fail=1
-              grep -E ': (error|fatal error):' "$log" | head -20 | while IFS= read -r line; do
-                f=$(echo "$line" | cut -d: -f1); l=$(echo "$line" | cut -d: -f2); m=$(echo "$line" | cut -d: -f4- | sed 's/^ *//')
-                f=${f#"$GITHUB_WORKSPACE/"}; f=${f#./}
-                case "$f" in /*) ;; drivers/*) ;; *) f="drivers/rtl88x2bu-wfb/$f" ;; esac
-                echo "::error file=$f,line=$l,title=$kver::$m"
-              done
-              echo "::error title=build failed ${{ matrix.name }} $kver::$(tail -5 "$log" | tr '\n' ' ' | cut -c1-900)"
+              errs=$(grep -E 'error|Error' "$log" | grep -v '^make\[' | head -12 | sed "s#$GITHUB_WORKSPACE/##g" | esc)
+              tailtxt=$(tail -8 "$log" | sed "s#$GITHUB_WORKSPACE/##g" | esc)
+              echo "::error title=build failed ${{ matrix.name }} $kver::ERRORS%0A$errs%0ATAIL%0A$tailtxt"
             fi
-            grep -E ': warning:' "$log" | grep -E 'rtw_xmit.c|rtl8822b_ops.c|hal_intf.c|ioctl_cfg80211.c|rtw_radiotap.c|os_intfs.c|xmit_linux.c' | head -10 | while IFS= read -r line; do
-              f=$(echo "$line" | cut -d: -f1); l=$(echo "$line" | cut -d: -f2); m=$(echo "$line" | cut -d: -f4- | sed 's/^ *//')
-              f=${f#"$GITHUB_WORKSPACE/"}; f=${f#./}
-              case "$f" in /*) ;; drivers/*) ;; *) f="drivers/rtl88x2bu-wfb/$f" ;; esac
-              echo "::warning file=$f,line=$l,title=$kver::$m"
+            grep -E ': warning:' "$log" | grep -E 'rtw_xmit.c|rtl8822b_ops.c|hal_intf.c|ioctl_cfg80211.c|rtw_radiotap.c|os_intfs.c|xmit_linux.c' | head -5 | sed "s#$GITHUB_WORKSPACE/##g" | while IFS= read -r line; do
+              echo "::warning title=warning $kver::$(echo "$line" | esc)"
             done
           done
           exit $fail
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         if: always()
         with:
           name: build-logs-${{ matrix.name }}
