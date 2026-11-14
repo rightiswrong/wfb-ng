@@ -163,7 +163,7 @@ static inline void _rtw_radiotap_fill_flags(struct rx_pkt_attrib *a, u8 *flags)
 
 sint rtw_fill_radiotap_hdr(_adapter *padapter, struct rx_pkt_attrib *a, u8 *buf)
 {
-#define RTAP_HDR_MAX 64
+#define RTAP_HDR_MAX 96
 
 	sint ret = _SUCCESS;
 	struct moinfo *moif = (struct moinfo *)&a->moif;
@@ -198,14 +198,15 @@ sint rtw_fill_radiotap_hdr(_adapter *padapter, struct rx_pkt_attrib *a, u8 *buf)
 
 	/* each antenna information */
 	rx_cnt = rf_type_to_rf_rx_cnt(pHalData->rf_type);
-#if 0
-	if (rx_cnt > 1) {
+	if (rx_cnt > 4)
+		rx_cnt = 4;
+	/* one extra radiotap namespace per RF path: dBm signal + antenna index */
+	if (a->physt && rx_cnt > 1) {
 		rtap_hdr->it_present |= BIT(IEEE80211_RADIOTAP_RADIOTAP_NAMESPACE) |
 		BIT(IEEE80211_RADIOTAP_EXT);
 
 		for (i = 1; i < rx_cnt; i++) {
-			tmp_32bit = (BIT(IEEE80211_RADIOTAP_DBM_ANTSIGNAL) |
-				     BIT(IEEE80211_RADIOTAP_LOCK_QUALITY) |
+			tmp_32bit = cpu_to_le32(BIT(IEEE80211_RADIOTAP_DBM_ANTSIGNAL) |
 				     BIT(IEEE80211_RADIOTAP_ANTENNA) |
 				     BIT(IEEE80211_RADIOTAP_RADIOTAP_NAMESPACE) |
 				     BIT(IEEE80211_RADIOTAP_EXT));
@@ -213,13 +214,11 @@ sint rtw_fill_radiotap_hdr(_adapter *padapter, struct rx_pkt_attrib *a, u8 *buf)
 			rt_len += 4;
 		}
 
-		tmp_32bit = (BIT(IEEE80211_RADIOTAP_DBM_ANTSIGNAL) |
-			     BIT(IEEE80211_RADIOTAP_LOCK_QUALITY) |
+		tmp_32bit = cpu_to_le32(BIT(IEEE80211_RADIOTAP_DBM_ANTSIGNAL) |
 			     BIT(IEEE80211_RADIOTAP_ANTENNA));
 		_rtw_memcpy(&hdr_buf[rt_len], &tmp_32bit, 4);
 		rt_len += 4;
 	}
-#endif
 
 	/* tsft, Required Alignment: 8 bytes */
 	if (0) { //(a->free_cnt) {
@@ -558,25 +557,17 @@ sint rtw_fill_radiotap_hdr(_adapter *padapter, struct rx_pkt_attrib *a, u8 *buf)
 	}
 
 	/* each antenna information */
-#if 0
-	if (rx_cnt > 1) {
-		for (i = 0; i <= rx_cnt; i++) {
+	if (a->physt && rx_cnt > 1) {
+		for (i = 0; i < rx_cnt; i++) {
 			/* dBm Antenna Signal */
-			hdr_buf[rt_len] = a->phy_info.rx_mimo_signal_strength[i];
+			hdr_buf[rt_len] = (u8)a->phy_info.rx_pwr[i];
 			rt_len += 1;
 
-			/* Signal Quality */
-			if (!IS_ALIGNED(rt_len, 2))
-				rt_len++;
-			hdr_buf[rt_len] = cpu_to_le16(a->phy_info.rx_mimo_signal_quality[i]);
-			rt_len += 2;
-
 			/* Antenna */
-			hdr_buf[rt_len] = i; /* pHalData->rf_type; */
+			hdr_buf[rt_len] = i;
 			rt_len += 1;
 		}
 	}
-#endif
 
 	/* push to skb */
 	pskb = (_pkt *)buf;

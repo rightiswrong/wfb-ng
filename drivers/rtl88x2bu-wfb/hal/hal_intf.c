@@ -1979,12 +1979,24 @@ void rtw_hal_set_tx_power_index(_adapter *adapter, u32 powerindex
 	adapter->hal_func.set_tx_power_index_handler(adapter, powerindex, rfpath, rate);
 }
 
+extern int rtw_tx_pwr_idx_override;
+
 u8 rtw_hal_get_tx_power_index(_adapter *adapter, enum rf_path rfpath
 	, RATE_SECTION rs, enum MGN_RATE rate, enum channel_width bw, BAND_TYPE band, u8 cch, u8 opch
 	, struct txpwr_idx_comp *tic)
 {
-	return adapter->hal_func.get_tx_power_index_handler(adapter, rfpath
+	int override_index = READ_ONCE(rtw_tx_pwr_idx_override);
+	u8 index = adapter->hal_func.get_tx_power_index_handler(adapter, rfpath
 		, rs, rate, bw, band, cch, opch, tic);
+
+	if (override_index > 0) {
+		u8 txgi_max = GET_HAL_SPEC(adapter)->txgi_max;
+
+		if (override_index > txgi_max)
+			override_index = txgi_max;
+		return (u8)override_index;
+	}
+	return index;
 }
 
 s8 rtw_hal_get_txpwr_target_extra_bias(_adapter *adapter, enum rf_path rfpath

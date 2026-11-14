@@ -3593,13 +3593,25 @@ static void fill_default_txdesc(struct xmit_frame *pxmitframe, u8 *pbuf)
 
 		SET_TX_DESC_DATARATE_8822B(pbuf, MRateToHwRate(pattrib->rate));
 
-		SET_TX_DESC_RTY_LMT_EN_8822B(pbuf, 1);
-		if (pattrib->retry_ctrl == _TRUE)
-			SET_TX_DESC_RTS_DATA_RTY_LMT_8822B(pbuf, 6);
-		else
-			SET_TX_DESC_RTS_DATA_RTY_LMT_8822B(pbuf, 12);
+		if (pattrib->inject == 0xa5) {
+			/* injected frame: rate, GI, BW, LDPC, STBC and retries come from radiotap */
+			SET_TX_DESC_DISDATAFB_8822B(pbuf, 1);
+			SET_TX_DESC_RTY_LMT_EN_8822B(pbuf, 1);
+			SET_TX_DESC_RTS_DATA_RTY_LMT_8822B(pbuf, pattrib->retry_ctrl == _TRUE ? 6 : 0);
+			SET_TX_DESC_DATA_SHORT_8822B(pbuf, pattrib->sgi ? 1 : 0);
+			SET_TX_DESC_DATA_BW_8822B(pbuf, pattrib->bwmode);
+			if (pattrib->ldpc)
+				SET_TX_DESC_DATA_LDPC_8822B(pbuf, 1);
+			SET_TX_DESC_DATA_STBC_8822B(pbuf, pattrib->stbc & 3);
+		} else {
+			SET_TX_DESC_RTY_LMT_EN_8822B(pbuf, 1);
+			if (pattrib->retry_ctrl == _TRUE)
+				SET_TX_DESC_RTS_DATA_RTY_LMT_8822B(pbuf, 6);
+			else
+				SET_TX_DESC_RTS_DATA_RTY_LMT_8822B(pbuf, 12);
 
-		rtl8822b_fill_txdesc_mgnt_bf(pxmitframe, pbuf);
+			rtl8822b_fill_txdesc_mgnt_bf(pxmitframe, pbuf);
+		}
 
 #ifdef CONFIG_XMIT_ACK
 		/* CCX-TXRPT ack for xmit mgmt frames. */
@@ -3675,7 +3687,7 @@ static void fill_default_txdesc(struct xmit_frame *pxmitframe, u8 *pbuf)
 	 * (3) Use HW Qos SEQ to control the seq num of Ext port non-Qos packets.
 	 * 2010.06.23. Added by tynli.
 	 */
-	if (!pattrib->qos_en) {
+	if (!pattrib->qos_en && pattrib->inject != 0xa5) {
 		SET_TX_DESC_DISQSELSEQ_8822B(pbuf, 1);
 		SET_TX_DESC_EN_HWSEQ_8822B(pbuf, 1);
 		SET_TX_DESC_HW_SSN_SEL_8822B(pbuf, pattrib->hw_ssn_sel);

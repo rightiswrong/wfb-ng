@@ -776,6 +776,10 @@ int rtw_tx_pwr_by_rate = CONFIG_TXPWR_BY_RATE_EN;
 module_param(rtw_tx_pwr_by_rate, int, 0644);
 MODULE_PARM_DESC(rtw_tx_pwr_by_rate, "0:Disable, 1:Enable, 2: Depend on efuse");
 
+int rtw_tx_pwr_idx_override = 0;
+module_param(rtw_tx_pwr_idx_override, int, 0644);
+MODULE_PARM_DESC(rtw_tx_pwr_idx_override, "0-63 value to force-set all TX power index values to (0 = off)");
+
 #if CONFIG_TXPWR_LIMIT
 int rtw_tx_pwr_lmt_enable = CONFIG_TXPWR_LIMIT_EN;
 module_param(rtw_tx_pwr_lmt_enable, int, 0644);

@@ -4658,6 +4658,8 @@ static const char *nl80211_tx_power_setting_str(int type)
 }
 #endif	/*	CONFIG_RTW_DEBUG	*/
 
+extern int rtw_tx_pwr_idx_override;
+
 static int cfg80211_rtw_set_txpower(struct wiphy *wiphy,
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 8, 0))
 	struct wireless_dev *wdev,
@@ -4688,6 +4690,17 @@ static int cfg80211_rtw_set_txpower(struct wiphy *wiphy,
 	RTW_INFO(FUNC_WIPHY_FMT" type:%s(%u) mbm:%d\n", FUNC_WIPHY_ARG(wiphy)
 		, nl80211_tx_power_setting_str(type), type, mbm);
 
+	/* wfb-ng convention (as rtl8812au): a negative fixed value sets the raw
+	 * TX power index, -index * 100. Any other setting clears the override. */
+	if (type == NL80211_TX_POWER_FIXED && mbm < 0) {
+		int idx = -mbm / 100;
+
+		WRITE_ONCE(rtw_tx_pwr_idx_override, idx > 63 ? 63 : idx);
+		ret = 0;
+		goto update;
+	}
+	WRITE_ONCE(rtw_tx_pwr_idx_override, 0);
+
 	switch (type) {
 	case NL80211_TX_POWER_AUTOMATIC:
 		wiphy_data->txpwr_total_lmt_mbm = UNSPECIFIED_MBM;
@@ -4716,6 +4729,7 @@ static int cfg80211_rtw_set_txpower(struct wiphy *wiphy,
 		RTW_WARN(FUNC_WIPHY_FMT" unknown type:%d\n", FUNC_WIPHY_ARG(wiphy), type);
 	}
 
+update:
 	if (ret == 0)
 		rtw_run_in_thread_cmd_wait(adapter, ((void *)(rtw_hal_update_txpwr_level)), adapter, 2000);
 
