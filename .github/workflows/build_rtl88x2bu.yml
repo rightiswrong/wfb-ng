@@ -1,0 +1,89 @@
+name: Build rtl88x2bu-wfb driver
+
+on:
+  push:
+    branches: [ rtl88x2bu-wfb ]
+    paths:
+      - 'drivers/rtl88x2bu-wfb/**'
+      - '.github/workflows/build_rtl88x2bu.yml'
+  pull_request:
+    paths:
+      - 'drivers/rtl88x2bu-wfb/**'
+      - '.github/workflows/build_rtl88x2bu.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.runner }}
+    container: ${{ matrix.image }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: ubuntu-24.04-amd64
+            runner: ubuntu-24.04
+            image: ubuntu:24.04
+            headers: linux-headers-generic linux-headers-generic-hwe-24.04
+          - name: ubuntu-26.04-amd64
+            runner: ubuntu-24.04
+            image: ubuntu:26.04
+            headers: linux-headers-generic
+          - name: ubuntu-24.04-arm64
+            runner: ubuntu-24.04-arm
+            image: ubuntu:24.04
+            headers: linux-headers-generic linux-headers-generic-hwe-24.04 linux-headers-raspi
+          - name: ubuntu-26.04-arm64
+            runner: ubuntu-24.04-arm
+            image: ubuntu:26.04
+            headers: linux-headers-generic linux-headers-raspi
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build tools and kernel headers
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends build-essential bc kmod ${{ matrix.headers }}
+          ls /lib/modules
+
+      - name: Build against every installed kernel
+        shell: bash
+        run: |
+          set -u
+          fail=0
+          cd drivers/rtl88x2bu-wfb
+          for build in /lib/modules/*/build; do
+            kver=$(basename "$(dirname "$build")")
+            log="$GITHUB_WORKSPACE/build-$kver.log"
+            make clean >/dev/null 2>&1 || true
+            if make -j"$(nproc)" KVER="$kver" > "$log" 2>&1 && [ -f 88x2bu_wfb.ko ]; then
+              params=$(modinfo -F parm 88x2bu_wfb.ko | grep -cE '^(MaxTxBufLen|rtw_tx_pwr_idx_override):')
+              warns=$(grep -c ': warning:' "$log" || true)
+              echo "::notice title=built ${{ matrix.name }} $kver::88x2bu_wfb.ko $(stat -c %s 88x2bu_wfb.ko) bytes, $(modinfo -F alias 88x2bu_wfb.ko | wc -l) USB aliases, wfb params $params/2, $warns warnings"
+            else
+              fail=1
+              grep -E ': (error|fatal error):' "$log" | head -20 | while IFS= read -r line; do
+                f=$(echo "$line" | cut -d: -f1); l=$(echo "$line" | cut -d: -f2); m=$(echo "$line" | cut -d: -f4- | sed 's/^ *//')
+                f=${f#"$GITHUB_WORKSPACE/"}; f=${f#./}
+                case "$f" in /*) ;; drivers/*) ;; *) f="drivers/rtl88x2bu-wfb/$f" ;; esac
+                echo "::error file=$f,line=$l,title=$kver::$m"
+              done
+              echo "::error title=build failed ${{ matrix.name }} $kver::$(tail -5 "$log" | tr '\n' ' ' | cut -c1-900)"
+            fi
+            grep -E ': warning:' "$log" | grep -E 'rtw_xmit.c|rtl8822b_ops.c|hal_intf.c|ioctl_cfg80211.c|rtw_radiotap.c|os_intfs.c|xmit_linux.c' | head -10 | while IFS= read -r line; do
+              f=$(echo "$line" | cut -d: -f1); l=$(echo "$line" | cut -d: -f2); m=$(echo "$line" | cut -d: -f4- | sed 's/^ *//')
+              f=${f#"$GITHUB_WORKSPACE/"}; f=${f#./}
+              case "$f" in /*) ;; drivers/*) ;; *) f="drivers/rtl88x2bu-wfb/$f" ;; esac
+              echo "::warning file=$f,line=$l,title=$kver::$m"
+            done
+          done
+          exit $fail
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: build-logs-${{ matrix.name }}
+          path: build-*.log
