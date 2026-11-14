@@ -52,7 +52,7 @@ jobs:
       - name: Build against every installed kernel
         shell: bash
         run: |
-          set -u
+          set +e +o pipefail
           esc() { sed -e 's/%/%25/g' -e 's/\r/%0D/g' | awk 'BEGIN{ORS="%0A"} {print}' | cut -c1-3000; }
           fail=0
           cd drivers/rtl88x2bu-wfb
@@ -73,7 +73,7 @@ jobs:
             fi
             grep -E ': warning:' "$log" | grep -E 'rtw_xmit.c|rtl8822b_ops.c|hal_intf.c|ioctl_cfg80211.c|rtw_radiotap.c|os_intfs.c|xmit_linux.c' | head -5 | sed "s#$GITHUB_WORKSPACE/##g" | while IFS= read -r line; do
               echo "::warning title=warning $kver::$(echo "$line" | esc)"
-            done
+            done || true
           done
           exit $fail
 
