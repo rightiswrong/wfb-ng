@@ -39,6 +39,7 @@ Please note, that it is only one official group.
 ## Supported WiFi hardware:
  - **RTL8812au**. (stable) 802.11ac capable. [**Requires external patched driver!**](https://github.com/svpcom/rtl8812au) System was tested with ALPHA AWUS036ACH on both sides in 5GHz mode.
  - **RTL8812eu**. (stable) 802.11ac capable. [**Requires external patched driver!**](https://github.com/svpcom/rtl8812eu) System was tested with [LB-LINK's BL-M8812EU2 module](https://www.lb-link.com/product_36_183.html)
+ - **RTL8812bu / RTL8822bu**. (experimental, not yet tested on hardware) 802.11ac capable. Patched driver in [drivers/rtl88x2bu-wfb](drivers/rtl88x2bu-wfb/README-WFB.md). Driver name `rtl88x2bu_wfb`.
  - **Atheros AR9350**. (beta) 802.11n (2.4GHz and/or 5GHz bands) + LDPC capable. Should work out of box, but requires kernel patches **to control TX power** (by default it will use max power). System was tested with [TP-Link CPE510](https://openwrt.org/toh/tp-link/cpe510), but should work with all similar devices.
 
 ##### NOTE:
@@ -94,7 +95,9 @@ cd rtl8812au/
 # For 8812eu:
 git clone -b v5.15.0.1 https://github.com/svpcom/rtl8812eu.git
 cd rtl8812eu/
-# For both:
+# For 8812bu/8822bu (experimental), from a checkout of this repository:
+cd drivers/rtl88x2bu-wfb/
+# For all:
 sudo ./dkms-install.sh
 ```
 - Get the name of the WiFi card by running:
@@ -110,7 +113,7 @@ wlan0: flags=4163<UP,BROADCAST,RUNNING,MULTICAST>  mtu 2312
         TX packets 0  bytes 0 (0.0 B)
         TX errors 0  dropped 0 overruns 0  carrier 0  collisions 0
 ```
-- Run `$ ethtool -i wlan0` and ensure that it show right driver: `rtl88xxau_wfb` or `rtl8812eu`
+- Run `$ ethtool -i wlan0` and ensure that it show right driver: `rtl88xxau_wfb`, `rtl8812eu` or `rtl88x2bu_wfb`
 - Download and run [install_gs.sh](https://raw.githubusercontent.com/svpcom/wfb-ng/refs/heads/release-25.01/scripts/install_gs.sh):
 ```
 curl -o install_gs.sh https://raw.githubusercontent.com/svpcom/wfb-ng/refs/heads/release-25.01/scripts/install_gs.sh

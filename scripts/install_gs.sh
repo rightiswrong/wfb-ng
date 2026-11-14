@@ -22,7 +22,7 @@ wfb_nics()
 {
     for i in $(find /sys/class/net/ -maxdepth 1 -type l | sort)
     do
-        if udevadm info $i | grep -qE 'ID_NET_DRIVER=(rtl88xxau_wfb|rtl88x2eu)'
+        if udevadm info $i | grep -qE 'ID_NET_DRIVER=(rtl88xxau_wfb|rtl88x2eu|rtl88x2bu_wfb)'
         then
             echo $(basename $i)
         fi
@@ -40,6 +40,7 @@ then
     echo "No supported wifi adapters found, please connect them and setup drivers first"
     echo "For 8812au: https://github.com/svpcom/rtl8812au"
     echo "For 8812eu: https://github.com/svpcom/rtl8812eu"
+    echo "For 8812bu/8822bu (experimental): drivers/rtl88x2bu-wfb in this repository"
     exit 1
 fi
 
@@ -104,11 +105,14 @@ cat > /etc/modprobe.d/wfb.conf << EOF
 blacklist 88XXau
 blacklist 8812au
 blacklist 8812
+blacklist 88x2bu
+blacklist rtw88_8822bu
 options cfg80211 ieee80211_regdom=RU
 # maximize output power by default
 #options 88XXau_wfb rtw_tx_pwr_idx_override=30
 # minimize output power by default
 options 88XXau_wfb rtw_tx_pwr_idx_override=1
+options 88x2bu_wfb rtw_tx_pwr_idx_override=1
 options 8812eu rtw_tx_pwr_by_rate=0 rtw_tx_pwr_lmt_enable=0
 EOF
 
