@@ -1,0 +1,53 @@
+diff --git a/hal/phydm/phydm_phystatus.c b/hal/phydm/phydm_phystatus.c
+index 7c04a89..0901f35 100644
+--- a/hal/phydm/phydm_phystatus.c
++++ b/hal/phydm/phydm_phystatus.c
+@@ -1613,6 +1613,37 @@ phydm_reset_rssi_for_dm(
+ 
+ 
+ 
++#if (RTL8814A_SUPPORT == 1)
++/* Backport of phydm_get_rssi_8814_ofdm from Realtek v5.6.4.2, adapted to this
++ * driver's older math library (odm_convert_to_linear/odm_convert_to_db, no
++ * fractional bits). Averages the OFDM signal of the active RX paths in linear
++ * scale. Paths reporting 0 are skipped (0 would index outside db_invert_table),
++ * and if rx_ant_status was never set, every path with a signal is used. */
++static s32 phydm_get_rssi_8814_ofdm(struct PHY_DM_STRUCT *dm, u8 *rssi_in)
++{
++	u32 rssi_linear = 0;
++	u8 rx_count = 0;
++	u8 i, v;
++
++	for (i = RF_PATH_A; i <= RF_PATH_D; i++) {
++		if (dm->rx_ant_status && !(dm->rx_ant_status & BIT(i)))
++			continue;
++		v = rssi_in[i];
++		if (v == 0)
++			continue;
++		if (v > 96)
++			v = 96;
++		rssi_linear += odm_convert_to_linear(v);
++		rx_count++;
++	}
++
++	if (rx_count == 0)
++		return 0;
++
++	return (s32)odm_convert_to_db(rssi_linear / rx_count);
++}
++#endif
++
+                 // svpcom:  backported from v5.6.4.2
+ 
+ void phydm_process_rssi_for_dm(struct PHY_DM_STRUCT *dm,
+@@ -1702,7 +1733,9 @@ void phydm_process_rssi_for_dm(struct PHY_DM_STRUCT *dm,
+                 rssi_tmp = phy_info->rx_mimo_signal_strength;
+ 
+                 #if (RTL8814A_SUPPORT == 1)
+-                #error "FIXME: Need to backport phydm_get_rssi_8814_ofdm from v5.6.4.2"
++                if (dm->support_ic_type & (ODM_RTL8814A)) {
++                        rssi_ave = phydm_get_rssi_8814_ofdm(dm, rssi_tmp);
++                } else
+                 #endif
+                 {
+                         if (rssi_tmp[RF_PATH_B] == 0) {

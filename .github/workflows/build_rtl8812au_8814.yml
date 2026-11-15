@@ -1,13 +1,14 @@
 name: Build rtl8812au-wfb with RTL8814AU enabled
 
-# Builds svpcom/rtl8812au (the wfb-ng RTL8812AU driver) with CONFIG_RTL8814A = y,
-# so RTL8814AU cards are covered by the same 88XXau_wfb module.
+# Builds svpcom/rtl8812au (the wfb-ng RTL8812AU driver) with CONFIG_RTL8814A = y and
+# the backport in drivers/rtl8812au-8814, so RTL8814AU cards use the same 88XXau_wfb module.
 
 on:
   push:
     branches: [ rtl88x2bu-wfb ]
     paths:
       - '.github/workflows/build_rtl8812au_8814.yml'
+      - 'drivers/rtl8812au-8814/**'
   workflow_dispatch:
 
 env:
@@ -41,12 +42,14 @@ jobs:
             headers: linux-headers-generic linux-headers-raspi
 
     steps:
+      - uses: actions/checkout@v5
+
       - name: Install build tools and kernel headers
         env:
           DEBIAN_FRONTEND: noninteractive
         run: |
           apt-get update
-          apt-get install -y --no-install-recommends build-essential bc kmod git ca-certificates ${{ matrix.headers }}
+          apt-get install -y --no-install-recommends build-essential bc kmod git ca-certificates patch ${{ matrix.headers }}
           ls /lib/modules
 
       - name: Get the driver and enable RTL8814AU
@@ -57,12 +60,7 @@ jobs:
           cd rtl8812au
           git fetch -q --depth 1 "$DRIVER_REPO" "$DRIVER_REF"
           git checkout -q FETCH_HEAD
-          sed -i 's/^CONFIG_RTL8814A = n/CONFIG_RTL8814A = y/' Makefile
-          # arm64 (incl. Raspberry Pi): the upstream README's platform switch
-          if [ "$(uname -m)" = "aarch64" ]; then
-            sed -i 's/^CONFIG_PLATFORM_I386_PC = y/CONFIG_PLATFORM_I386_PC = n/; s/^CONFIG_PLATFORM_ARM64_RPI = n/CONFIG_PLATFORM_ARM64_RPI = y/' Makefile
-          fi
-          grep -E '^CONFIG_RTL88(12|21|14)A = |^CONFIG_PLATFORM_(I386_PC|ARM64_RPI) = ' Makefile
+          sh "$GITHUB_WORKSPACE/drivers/rtl8812au-8814/enable-8814.sh"
           grep -q '^CONFIG_RTL8814A = y' Makefile
 
       - name: Build against every installed kernel
