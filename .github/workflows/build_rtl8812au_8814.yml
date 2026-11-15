@@ -93,7 +93,10 @@ jobs:
               tailtxt=$(tail -8 "$log" | sed "s#$GITHUB_WORKSPACE/##g" | esc)
               echo "::error title=build failed 8814 ${{ matrix.name }} $kver::ERRORS%0A$errs%0ATAIL%0A$tailtxt"
             fi
-            grep -E ': warning:' "$log" | grep -i 'rtl8814a\|8814' | head -5 | sed "s#$GITHUB_WORKSPACE/##g" | while IFS= read -r line; do
+            # warnings per source file, and in full for the patched file and the RTL8814A code
+            byfile=$(grep -E ': warning:' "$log" | sed "s#$GITHUB_WORKSPACE/##g" | cut -d: -f1 | sed 's#.*rtl8812au/##' | sort | uniq -c | sort -rn | head -12 | esc)
+            [ -n "$byfile" ] && echo "::notice title=warnings by file 8814 ${{ matrix.name }} $kver::$byfile"
+            grep -E ': warning:' "$log" | grep -E 'phydm_phystatus\.c|rtl8814a|8814' | head -5 | sed "s#$GITHUB_WORKSPACE/##g" | while IFS= read -r line; do
               echo "::warning title=warning 8814 $kver::$(echo "$line" | esc)"
             done || true
           done
