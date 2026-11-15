@@ -1,0 +1,108 @@
+name: Build rtl8812au-wfb with RTL8814AU enabled
+
+# Builds svpcom/rtl8812au (the wfb-ng RTL8812AU driver) with CONFIG_RTL8814A = y,
+# so RTL8814AU cards are covered by the same 88XXau_wfb module.
+
+on:
+  push:
+    branches: [ rtl88x2bu-wfb ]
+    paths:
+      - '.github/workflows/build_rtl8812au_8814.yml'
+  workflow_dispatch:
+
+env:
+  DRIVER_REPO: https://github.com/svpcom/rtl8812au
+  DRIVER_REF: 3577999972f350a2213e7509ae1f371b99fc96ab   # branch v5.2.20, 2026-11-07
+
+jobs:
+  build:
+    name: 8814 ${{ matrix.name }}
+    runs-on: ${{ matrix.runner }}
+    container: ${{ matrix.image }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: ubuntu-24.04-amd64
+            runner: ubuntu-24.04
+            image: ubuntu:24.04
+            headers: linux-headers-generic linux-headers-generic-hwe-24.04
+          - name: ubuntu-26.04-amd64
+            runner: ubuntu-24.04
+            image: ubuntu:26.04
+            headers: linux-headers-generic
+          - name: ubuntu-24.04-arm64
+            runner: ubuntu-24.04-arm
+            image: ubuntu:24.04
+            headers: linux-headers-generic linux-headers-generic-hwe-24.04 linux-headers-raspi
+          - name: ubuntu-26.04-arm64
+            runner: ubuntu-24.04-arm
+            image: ubuntu:26.04
+            headers: linux-headers-generic linux-headers-raspi
+
+    steps:
+      - name: Install build tools and kernel headers
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends build-essential bc kmod git ca-certificates ${{ matrix.headers }}
+          ls /lib/modules
+
+      - name: Get the driver and enable RTL8814AU
+        shell: bash
+        run: |
+          set -e
+          git init -q rtl8812au
+          cd rtl8812au
+          git fetch -q --depth 1 "$DRIVER_REPO" "$DRIVER_REF"
+          git checkout -q FETCH_HEAD
+          sed -i 's/^CONFIG_RTL8814A = n/CONFIG_RTL8814A = y/' Makefile
+          # arm64 (incl. Raspberry Pi): the upstream README's platform switch
+          if [ "$(uname -m)" = "aarch64" ]; then
+            sed -i 's/^CONFIG_PLATFORM_I386_PC = y/CONFIG_PLATFORM_I386_PC = n/; s/^CONFIG_PLATFORM_ARM64_RPI = n/CONFIG_PLATFORM_ARM64_RPI = y/' Makefile
+          fi
+          grep -E '^CONFIG_RTL88(12|21|14)A = |^CONFIG_PLATFORM_(I386_PC|ARM64_RPI) = ' Makefile
+          grep -q '^CONFIG_RTL8814A = y' Makefile
+
+      - name: Build against every installed kernel
+        shell: bash
+        run: |
+          set +e +o pipefail
+          esc() { sed -e 's/%/%25/g' -e 's/\r/%0D/g' | awk 'BEGIN{ORS="%0A"} {print}' | cut -c1-3000; }
+          fail=0
+          cd rtl8812au
+          echo "::notice title=kernels ${{ matrix.name }}::$(ls /lib/modules | tr '\n' ' ')"
+          for build in /lib/modules/*/build; do
+            kver=$(basename "$(dirname "$build")")
+            log="$GITHUB_WORKSPACE/build-8814-$kver.log"
+            make clean >/dev/null 2>&1 || true
+            if make -j"$(nproc)" KVER="$kver" KSRC="$build" > "$log" 2>&1 && [ -f 88XXau_wfb.ko ]; then
+              ko=88XXau_wfb.ko
+              a8814=$(modinfo -F alias $ko | grep -ciE 'v0BDAp8813|v7392pA833|v2357p0106')
+              a8812=$(modinfo -F alias $ko | grep -ciE 'v0BDAp8812')
+              params=$(modinfo -F parm $ko | grep -cE '^(rtw_tx_pwr_idx_override|MaxTxBufLen):')
+              syms=$(grep -c 'rtl8814a' <(nm $ko 2>/dev/null) || true)
+              warns=$(grep -c ': warning:' "$log" || true)
+              echo "::notice title=built 8814 ${{ matrix.name }} $kver::$ko $(stat -c %s $ko) bytes; $(modinfo -F alias $ko | wc -l) USB aliases (8814 sample IDs found: $a8814/3, 8812: $a8812/1); 8814 symbols: $syms; wfb params $params; $warns warnings"
+              if [ "$a8814" -lt 3 ] || [ "$syms" -lt 1 ]; then
+                fail=1
+                echo "::error title=8814 missing ${{ matrix.name }} $kver::module built but RTL8814AU IDs or code are missing"
+              fi
+            else
+              fail=1
+              errs=$(grep -E 'error|Error' "$log" | grep -v '^make\[' | head -12 | sed "s#$GITHUB_WORKSPACE/##g" | esc)
+              tailtxt=$(tail -8 "$log" | sed "s#$GITHUB_WORKSPACE/##g" | esc)
+              echo "::error title=build failed 8814 ${{ matrix.name }} $kver::ERRORS%0A$errs%0ATAIL%0A$tailtxt"
+            fi
+            grep -E ': warning:' "$log" | grep -i 'rtl8814a\|8814' | head -5 | sed "s#$GITHUB_WORKSPACE/##g" | while IFS= read -r line; do
+              echo "::warning title=warning 8814 $kver::$(echo "$line" | esc)"
+            done || true
+          done
+          exit $fail
+
+      - uses: actions/upload-artifact@v5
+        if: always()
+        with:
+          name: build-logs-8814-${{ matrix.name }}
+          path: build-8814-*.log
